@@ -221,18 +221,20 @@ function frame(ms){
 
 /* ───────────── the selected creature ───────────── */
 const rnd = () => (Math.random() * 1e9) | 0;
+const label = c => { $('#card-kind').textContent = c.g.kind + ' · ' + c.g.form; $$('[data-base]').forEach(b => b.setAttribute('aria-pressed', b.dataset.base === c.g.kind)); };
 function openCard(c, x, y){
-  sel = c; S.select(c); card.hidden = false; $('#card-kind').textContent = c.g.kind; cardText.value = c.text || '';
+  sel = c; S.select(c); card.hidden = false; label(c); cardText.value = c.text || '';
   if (!immersive){ const cwid = card.offsetWidth, chei = card.offsetHeight; card.style.left = Math.max(8, Math.min(W - cwid - 8, x + ox + 22)) + 'px'; card.style.top = Math.max(8, Math.min(H - chei - 8, y + oy + 22)) + 'px'; }
   else { card.style.left = ''; card.style.top = ''; }
 }
 function closeCard(){ sel = null; S.select(null); card.hidden = true; cardText.blur(); }
 let typeT = 0;
-function applyText(){ if (!sel) return; const t = cardText.value; if (!t.trim()) return; sel = S.reshape(sel, t) || sel; $('#card-kind').textContent = sel.g.kind; }
+/* the creature is f(base, name). Typing changes the name; a base button changes the base and keeps the name. */
+function applyText(base){ if (!sel) return; const t = cardText.value; if (!t.trim()) return; sel = S.reshape(sel, t, base || sel.g.kind, !!base) || sel; label(sel); }
 cardText.addEventListener('input', () => { clearTimeout(typeT); typeT = setTimeout(applyText, 130); });
 cardText.addEventListener('keydown', e => { if (e.key === 'Enter'){ clearTimeout(typeT); applyText(); cardText.blur(); } e.stopPropagation(); if (e.key === 'Escape') closeCard(); });
-const SYL = ['ka', 'lu', 'mi', 'ro', 'ne', 'ti', 'sha', 'vo', 'zu', 'el', 'an', 'ir', 'om', 'ys', 'qu', 'ax', 'be', 'dri', 'fen', 'gol'];
-$('#card-shuffle').addEventListener('click', () => { let w = ''; for (let i = 0, n = 2 + (Math.random() * 3 | 0); i < n; i++) w += SYL[Math.random() * SYL.length | 0]; cardText.value = w; applyText(); });
+$$('[data-base]').forEach(b => b.addEventListener('click', () => { clearTimeout(typeT); applyText(b.dataset.base); }));
+$('#card-shuffle').addEventListener('click', () => { clearTimeout(typeT); cardText.value = S.nameFrom(rnd()); applyText(sel && sel.g.kind); });
 $('#card-copy').addEventListener('click', () => { if (sel) S.clone(sel, 1); });
 $('#card-copy10').addEventListener('click', () => { if (sel) S.clone(sel, 10); });
 $('#card-del').addEventListener('click', () => { if (sel) S.remove(sel); closeCard(); });
@@ -296,7 +298,7 @@ window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instal
 $('#install').addEventListener('click', () => { if (installEvt){ installEvt.prompt(); installEvt = null; $('#install').hidden = true; } });
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 
-/* boot. URL options: ?seed=4f2a &theme=phosphor &cell=s|m|l &walls=1|0 &solo=butterfly (one creature, centred) */
+/* boot. URL options: ?seed=4f2a &theme=phosphor &cell=s|m|l &walls=1|0 &solo=butterfly[&name=tiny+red+nick] (one creature, centred) */
 const qs = new URLSearchParams(location.search);
 if (qs.get('seed')) seed = parseInt(qs.get('seed'), 16) & 0xffff;
 if (THEMES[qs.get('theme')]) theme = qs.get('theme');
@@ -304,7 +306,7 @@ if (CELLS[qs.get('cell')]) cellKey = qs.get('cell');
 document.body.classList.toggle('immersive', immersive);
 applyTheme(); resize(); setImmersive(immersive);
 setWalls(qs.has('walls') ? qs.get('walls') !== '0' : phone());
-if (S.SPECIES[qs.get('solo')]){ S.clear(); S.add(qs.get('solo'), qs.get('hue') ? +qs.get('hue') : 200, S.GW / 2, S.GH / 2, seed); }
+if (S.SPECIES[qs.get('solo')]){ S.clear(); S.add(qs.get('solo'), qs.get('name'), S.GW / 2, S.GH / 2, seed); }
 else S.buildScene(seed);
 $$('[data-cell]').forEach(b => b.setAttribute('aria-pressed', b.dataset.cell === cellKey));
 if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setPaused(true);

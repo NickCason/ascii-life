@@ -64,18 +64,29 @@ const check = (name, ok, detail) => { rows.push([group, !!ok, name, detail || ''
     const fishI = await biggest(page), wantKind = await page.evaluate(i => __life.sim.creatures[i].g.kind, fishI), p = await spot(page, fishI); n = await count(page);
     await page.mouse.click(p[0], p[1]);
     let s = await page.evaluate(() => ({ hidden: document.querySelector('#card').hidden, kind: document.querySelector('#card-kind').textContent, sel: __life.selected && __life.selected.g.kind, n: __life.sim.creatures.length }));
-    check('clicking a creature opens its card and adds nothing', !s.hidden && s.kind === wantKind && s.sel === wantKind && s.n === n, `card says "${s.kind}"`);
+    check('clicking a creature opens its card and adds nothing', !s.hidden && s.kind.startsWith(wantKind + ' · ') && s.sel === wantKind && s.n === n, `card says "${s.kind}"`);
     const id = await page.evaluate(() => __life.selected.id);
     await page.fill('#card-text', 'red koi nick'); await page.waitForTimeout(400);
     s = await page.evaluate(() => { const c = __life.selected; return { id: c.id, kind: c.g.kind, hue: c.g.hue, tw: c.g.tw, text: c.text, g: JSON.stringify(c.g) }; });
-    check('typing reshapes it: red, a fish, drawn in its letters', s.id === id && s.kind === 'fish' && (s.hue < 12 || s.hue > 348) && s.tw.startsWith('redkoi'), `hue ${s.hue.toFixed(0)}, glyphs "${s.tw}"`);
+    check('typing reshapes it: red, a fish, its letters in the twinkle', s.id === id && s.kind === 'fish' && (s.hue < 12 || s.hue > 348) && s.tw.endsWith('redk'), `hue ${s.hue.toFixed(0)}, twinkles "${s.tw}"`);
     await page.fill('#card-text', 'pink moth'); await page.waitForTimeout(400);
     const moth = await page.evaluate(() => [__life.selected.g.kind, document.querySelector('#card-kind').textContent, __life.selected.id]);
-    check('a species word changes what it is', moth[0] === 'butterfly' && moth[1] === 'butterfly' && moth[2] === id, moth[0]);
+    check('a base word in the name changes what it is', moth[0] === 'butterfly' && moth[1].startsWith('butterfly · ') && moth[2] === id, moth[1]);
     await page.fill('#card-text', 'red koi nick'); await page.waitForTimeout(400);
     check('the same words bring the same creature back', await page.evaluate(() => JSON.stringify(__life.selected.g)) === s.g);
-    await page.click('#card-shuffle'); const sh = await page.evaluate(() => [document.querySelector('#card-text').value, __life.selected.text]);
-    check('Shuffle writes a word into the box, so the result can be typed again', sh[0].length >= 4 && sh[0] === sh[1], `"${sh[0]}"`);
+    // base buttons: one name, every body
+    await page.fill('#card-text', 'kalumiro'); await page.waitForTimeout(400);
+    const t0 = await page.evaluate(() => { const g = __life.selected.g; return [g.size, g.hue, g.scheme, g.glow.mode]; }); let bases = 0; const forms = [];
+    for (const k of ['serpent', 'fish', 'jelly', 'lizard', 'crawler', 'butterfly', 'dragonfly', 'wisp']){
+      await page.click(`[data-base="${k}"]`);
+      const r = await page.evaluate(() => { const c = __life.selected, g = c.g; return { kind: g.kind, form: g.form, id: c.id, text: c.text, t: [g.size, g.hue, g.scheme, g.glow.mode], pressed: document.querySelector('[data-base][aria-pressed="true"]').dataset.base, label: document.querySelector('#card-kind').textContent, box: document.querySelector('#card-text').value }; });
+      forms.push(r.form); if (r.kind === k && r.pressed === k && r.id === id && r.text === 'kalumiro' && r.box === 'kalumiro' && r.label === k + ' · ' + r.form && JSON.stringify(r.t) === JSON.stringify(t0)) bases++;
+    }
+    check('base buttons: the same name becomes each of the eight bodies, keeping its size, colours and glow', bases === 8, `"kalumiro" → ${forms.join(', ')}`);
+    await page.fill('#card-text', 'blue snake'); await page.waitForTimeout(400); await page.click('[data-base="fish"]');
+    check('pressing a base overrides a base word in the name', await page.evaluate(() => __life.selected.g.kind) === 'fish');
+    await page.click('#card-shuffle'); const sh = await page.evaluate(() => [document.querySelector('#card-text').value, __life.selected.text, __life.selected.g.kind]);
+    check('Shuffle writes a new name into the box and keeps the base', sh[0].length >= 4 && sh[0] === sh[1] && sh[2] === 'fish', `"${sh[0]}"`);
     n = await count(page); await page.click('#card-copy'); await page.click('#card-copy10');
     check('Copy and Copy ×10 add eleven of it', await count(page) === n + 11);
     const w2 = await water(page); n = await count(page); await page.mouse.click(w2[0], w2[1]);
@@ -117,7 +128,7 @@ const check = (name, ok, detail) => { rows.push([group, !!ok, name, detail || ''
   {
     const { ctx, page, errs } = await open('seed=11&solo=fish', { viewport: { width: 760, height: 520 }, deviceScaleFactor: 2 });
     for (const kind of ['serpent', 'fish', 'lizard', 'crawler', 'jelly', 'butterfly', 'dragonfly', 'wisp']){
-      const r = await page.evaluate(k => { const L = window.__life, S = L.sim; L.setPaused(true); S.reset(); L.wipe(); const c = S.add(k, 200, S.GW / 2, S.GH / 2, 11);
+      const r = await page.evaluate(k => { const L = window.__life, S = L.sim; L.setPaused(true); S.reset(); L.wipe(); const c = S.add(k, 'big teal sample', S.GW / 2, S.GH / 2, 11);
         if (k === 'butterfly' || k === 'dragonfly'){ c.head = -Math.PI / 2; for (let i = 0; i < c.g.n; i++){ c.bx[i] = c.x; c.by[i] = c.y + i * c.g.seg * S.U; } c.stT = 30; }
         L.advance(k === 'butterfly' || k === 'dragonfly' ? .05 : 4); const f = S.field(); let a = 0; const g0 = Array.from(f.fc);
         for (let i = 0; i < f.fv.length; i++) if (f.fv[i] > 0) a++;
@@ -195,6 +206,10 @@ const check = (name, ok, detail) => { rows.push([group, !!ok, name, detail || ''
 
   group = 'OTHER';
   {
+    const crowd = await open('seed=2b7e&cell=s&walls=1'); for (let i = 0; i < 3; i++) await crowd.page.click('#add10'); await crowd.page.waitForTimeout(3500);
+    const mix = await crowd.page.evaluate(() => [__life.sim.creatures.length, new Set(__life.sim.creatures.map(c => c.g.kind + ':' + c.g.form)).size, Math.min(...__life.sim.creatures.map(c => c.g.size)), Math.max(...__life.sim.creatures.map(c => c.g.size))]);
+    check('a crowd of random creatures is a mix of forms and sizes', mix[1] >= 14 && mix[3] / mix[2] > 2 && crowd.errs.length === 0, `${mix[0]} creatures, ${mix[1]} different forms, sizes ×${mix[2].toFixed(2)}–×${mix[3].toFixed(2)}`);
+    await crowd.page.screenshot({ path: path.join(OUT, 'crowd.png') }); await crowd.ctx.close();
     const rm = await open('seed=4f2a', { viewport: { width: 900, height: 600 }, reducedMotion: 'reduce' });
     const r = await rm.page.evaluate(() => { const f = __life.sim.field(); let n = 0; for (let i = 0; i < f.fv.length; i++) if (f.fv[i] > 0) n++; return [__life.paused, document.querySelector('#pause').textContent, n]; });
     check('reduced-motion setting starts paused, with a picture on screen', r[0] && r[1] === 'Play' && r[2] > 100, `${r[2]} lit cells`); await rm.ctx.close();

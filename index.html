@@ -75,6 +75,8 @@ button.danger:hover{border-color:#ff9a9a}
   padding:8px 9px;width:100%;min-width:0;-webkit-user-select:text;user-select:text}
 .card input:focus{outline:1px solid var(--accent);outline-offset:1px}
 .card .row{display:flex;flex-wrap:wrap;gap:6px}
+.card .bases{gap:4px}
+.card .bases button{padding:3px 7px;min-height:25px;font-size:10.5px;letter-spacing:.02em}
 .x{border:0;min-height:24px;padding:0 6px;font-size:16px;line-height:1;color:var(--ink-dim)}
 .fab{display:none;position:absolute;z-index:25;right:calc(12px + var(--sr));bottom:calc(12px + var(--sb));width:46px;height:46px;border-radius:50%;padding:0;font-size:19px;
   align-items:center;justify-content:center;background:color-mix(in srgb,var(--room) 80%,transparent)}
@@ -96,6 +98,7 @@ body.immersive .rail button{min-height:40px;padding:8px 12px;font-size:13px}
 body.immersive .hint{margin-left:0;width:100%}
 body.immersive .card{position:fixed;left:max(8px,var(--sl));right:max(8px,var(--sr));top:auto!important;width:auto;bottom:calc(8px + var(--sb) + var(--kb))}
 body.immersive .card button{min-height:40px;padding:8px 12px;font-size:13px}
+body.immersive .card .bases button{min-height:36px;padding:6px 9px;font-size:12px}
 @media (max-width:720px){.plate{letter-spacing:.08em}.hint{margin-left:0;width:100%}}
 @media (prefers-reduced-motion:reduce){body.immersive .rail{transition:none}}
 </style>
@@ -118,8 +121,12 @@ body.immersive .card button{min-height:40px;padding:8px 12px;font-size:13px}
 
       <aside class="card" id="card" hidden aria-label="Selected creature">
         <header><span class="kind" id="card-kind">creature</span><button class="x" id="card-close" aria-label="Close">×</button></header>
-        <label for="card-text">Type anything. It becomes this creature's seed and the characters it is drawn in. The same words always make the same creature.</label>
-        <input id="card-text" type="text" maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="a name, a word, red koi…">
+        <div class="row bases" id="card-bases" role="group" aria-label="Base type">
+          <button data-base="serpent">serpent</button><button data-base="fish">fish</button><button data-base="jelly">jelly</button><button data-base="lizard">lizard</button>
+          <button data-base="crawler">crawler</button><button data-base="butterfly">butterfly</button><button data-base="dragonfly">dragonfly</button><button data-base="wisp">wisp</button>
+        </div>
+        <label for="card-text">Pick a base, then give it a name. The same name on the same base always makes the same creature. Words like tiny, giant, fast, red, spiky or rainbow are obeyed; symbols you type become its skin.</label>
+        <input id="card-text" type="text" maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="a name, tiny red spiky…">
         <div class="row">
           <button id="card-shuffle">Shuffle</button>
           <button id="card-copy">Copy</button>
