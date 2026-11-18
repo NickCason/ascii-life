@@ -6,7 +6,9 @@
     "test": "node tests/motion.test.js && node tests/browser.test.js",
     "test:motion": "node tests/motion.test.js",
     "test:browser": "node tests/browser.test.js",
-    "frames": "node tests/frames.js"
+    "frames": "node tests/frames.js",
+    "start": "node tests/serve.js",
+    "icons": "node tools/make-icons.js"
   },
   "devDependencies": {
     "playwright": "1.62.1"

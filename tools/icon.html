@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8">
+<style>
+html,body{margin:0;height:100%;background:transparent}
+.i{width:100vw;height:100vw;display:grid;place-items:center;overflow:hidden;
+  background:radial-gradient(circle at 50% 46%,#0c2a2c 0,#06141a 42%,#030609 100%)}
+.i.round{border-radius:22%}
+.g{position:absolute;inset:0;background-image:radial-gradient(circle,#1c3b3f 0 1.1%,transparent 1.5%);background-size:8.33% 8.33%;opacity:.55}
+pre{position:relative;margin:0;font:700 12.4vw/1.02 "DejaVu Sans Mono",ui-monospace,Menlo,Consolas,monospace;color:#b8fff0;letter-spacing:.02em;
+  text-shadow:0 0 1.2vw #6ff2d2,0 0 4vw #2fd8c0,0 0 9vw rgba(47,216,192,.7)}
+.pad pre{font-size:9.4vw}
+b{color:#fff;font-weight:700}i{font-style:normal;color:#7ae0ff;text-shadow:0 0 1.2vw #59c8ff,0 0 4vw #2a9bff}
+</style>
+<div class="i" id="i"><div class="g"></div><pre> .-~~-.
+( <b>@</b>  <b>@</b> )
+ wvwvwv
+<i> ) ( ) (
+ (  )  )</i></pre></div>
+<script>const q=new URLSearchParams(location.search);if(q.get('round'))i.classList.add('round');if(q.get('pad'))i.classList.add('pad');</script>

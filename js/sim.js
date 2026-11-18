@@ -25,14 +25,17 @@ const hk = h => (Math.round(((h % 360) + 360) % 360 / 360 * HUES)) % HUES;
 
 /* ───────────── board state ───────────── */
 let cols = 0, rows = 0, cw = 8, ch = 15, N = 0, GW = 0, GH = 0, U = 1;
-let fv, fc, fk;                                                  // the output field
+let fv, fc, fk, fo;                                              // the output field: brightness, glyph, colour key, owner id
 let sid, ssd, snx, sny, sdd, ss, su, s2, sf, stx, sty, touched, nT = 0, stamp = 0;   // shape scratch
 let creatures = [], motes = [], parts = [];
 let T = 0, mx = -1e6, my = -1e6, uid = 1;
+let WALLS = false, OWN = 0, SEL = 0, bx0 = 0, bx1 = 0, by0 = 0, by1 = 0;
+const WALL = 65535;
 
 function configure(c, r, cellW, cellH){
-  cols = c; rows = r; cw = cellW; ch = cellH; N = cols * rows; GW = cols * cw; GH = rows * ch; U = ch / 9;
-  fv = new Float32Array(N); fc = new Uint16Array(N); fk = new Uint8Array(N);
+  cols = c; rows = r; cw = cellW; ch = cellH; N = cols * rows; GW = cols * cw; GH = rows * ch;
+  U = ch / 9 * clamp(Math.sqrt(N / 9000) + .15, .78, 1);            // creatures shrink a little on small boards so more of them fit
+  fv = new Float32Array(N); fc = new Uint16Array(N); fk = new Uint8Array(N); fo = new Uint16Array(N);
   sid = new Uint32Array(N); ssd = new Float32Array(N); snx = new Float32Array(N); sny = new Float32Array(N);
   sdd = new Float32Array(N); ss = new Float32Array(N); su = new Float32Array(N); s2 = new Float32Array(N); sf = new Uint8Array(N);
   stx = new Float32Array(N); sty = new Float32Array(N); touched = new Int32Array(N); stamp = 0;
@@ -47,11 +50,12 @@ function put(i, code, v, k){
     const tb = (T * 9 + frac(i * .6180339) * 5) | 0, h = hash3(i, tb, CID), d = TWD * (.4 + v * .8);
     if (h < d){ code = TWS[(h / d * TWS.length) | 0]; v = v * .4 + 1 + h / d * .35; k = hash3(i, tb, 7) < .5 ? WHITE : TWK; }
   }
-  fv[i] = v; fc[i] = code; fk[i] = k;
+  fv[i] = v; fc[i] = code; fk[i] = k; fo[i] = OWN;
+  if (OWN === SEL && SEL){ const x = i % cols, y = (i / cols) | 0; if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y; }
 }
 function dot(x, y, code, v, k, raw){
   const cx = Math.floor(x / cw), cy = Math.floor(y / ch); if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return;
-  const i = cy * cols + cx; if (raw){ fv[i] = v; fc[i] = code; fk[i] = k; } else put(i, code, v, k);
+  const i = cy * cols + cx; if (raw){ fv[i] = v; fc[i] = code; fk[i] = k; fo[i] = OWN; } else put(i, code, v, k);
 }
 /* a stroke picks its glyph from its slope, and for shallow strokes from where it crosses the cell:  _ . - ' "  */
 function lineGlyph(dx, dy, y){
@@ -229,10 +233,10 @@ class Strand {
 /* ───────────── steering shared by everything that roams ───────────── */
 function steer(c, x, y, head, wander){
   let turn = (Math.sin(T * .37 + c.ph) * .6 + Math.sin(T * .83 + c.ph * 1.7) * .4 + Math.sin(T * .19 + c.ph * 2.3) * .5) * wander;
-  const mb = Math.min(150 * U, GW * .28, GH * .28); let wx = 0, wy = 0;                 // walls push harder the deeper you go
+  const mb = Math.min((WALLS ? 175 : 150) * U, GW * .3, GH * .3); let wx = 0, wy = 0;      // edges push harder the deeper you go
   if (x < mb) wx = (mb - x) / mb; else if (x > GW - mb) wx = -(x - (GW - mb)) / mb;
   if (y < mb) wy = (mb - y) / mb; else if (y > GH - mb) wy = -(y - (GH - mb)) / mb;
-  if (wx || wy){ const depth = Math.min(1.6, Math.hypot(wx, wy)); turn += clamp(angDiff(Math.atan2(wy, wx), head), -1.3, 1.3) * depth * depth * 2.6; }
+  if (wx || wy){ const depth = Math.min(1.6, Math.hypot(wx, wy)); turn += clamp(angDiff(Math.atan2(wy, wx), head), -1.3, 1.3) * depth * depth * (WALLS ? 3.8 : 2.6); }
   const R = 220 * U;
   for (const o of creatures){
     if (o === c) continue; const dx = x - o.x, dy = y - o.y, d = Math.hypot(dx, dy);
@@ -240,10 +244,18 @@ function steer(c, x, y, head, wander){
   }
   return turn;
 }
+/* walls on: a head that reaches the frame is held there and turned back toward open water */
+function hold(c, x, y, pad){
+  const X = clamp(x, pad, Math.max(pad, GW - pad)), Y = clamp(y, pad, Math.max(pad, GH - pad));
+  if (X !== x || Y !== y){ c.head += clamp(angDiff(Math.atan2(GH / 2 - Y, GW / 2 - X), c.head), -1, 1) * .05; c.bump = 1; }
+  HX = X; HY = Y;
+}
+let HX = 0, HY = 0;
 function glowState(c, x, y, dt, rate){
   c.flash *= Math.exp(-dt * rate); c.flashT -= dt;
   if (c.flashT < 0){ c.flash = .85; c.flashT = rr(c.rng, 4, 13); }
-  const pr = Math.max(0, 1 - Math.hypot(x - mx, y - my) / (170 * U)); c.near += (pr - c.near) * Math.min(1, dt * 6);
+  let pr = Math.max(0, 1 - Math.hypot(x - mx, y - my) / (170 * U)); if (c.id === SEL) pr = Math.max(pr, .75);
+  c.near += (pr - c.near) * Math.min(1, dt * 6);
 }
 
 /* ───────────── species: genomes are plain data in board units (1 unit = 1/9 of a cell height) ───────────── */
@@ -318,8 +330,8 @@ const SPECIES = {
 
 /* ───────────── anything with a spine: serpent, fish, lizard, crawler, wisp ───────────── */
 class Spined {
-  constructor(g, x, y, rng){
-    this.g = g; this.rng = rng; this.id = uid++; const n = g.n; this.ph = rng() * TAU; this.head = rng() * TAU;
+  constructor(g, x, y, rng, head){
+    this.g = g; this.rng = rng; this.id = uid++; const n = g.n; this.ph = rng() * TAU; this.head = head == null ? rng() * TAU : head;
     this.bx = new Float32Array(n); this.by = new Float32Array(n); this.px = new Float32Array(n); this.py = new Float32Array(n); this.r = new Float32Array(n);
     this.k = hk(g.hue); this.k2 = hk(g.hue2); this.k3 = hk(g.hue3);
     this.v = g.speed * U * .6; this.eff = .5; this.burst = true; this.gaitT = rr(rng, .3, 2); this.wph = rng() * TAU; this.gp = rng(); this.amp = .6; this.turnS = 0;
@@ -364,6 +376,7 @@ class Spined {
     }
     turn = clamp(turn, -2.4, 2.4); this.turnS += (turn - this.turnS) * Math.min(1, dt * 4); this.head += turn * dt;
     bx[0] = hx + Math.cos(this.head) * this.v * dt; by[0] = hy + Math.sin(this.head) * this.v * dt;
+    if (WALLS){ hold(this, bx[0], by[0], Math.min(this.r[0], 2 * ch) + ch * 1.5); bx[0] = HX; by[0] = HY; }
     let pa = this.head; const seg = g.seg * U;
     for (let i = 1; i < n; i++){                                 // base chain: every joint follows the one ahead, with a bend limit
       let a = Math.atan2(by[i-1] - by[i], bx[i-1] - bx[i]); const d = angDiff(a, pa);
@@ -470,22 +483,27 @@ class Spined {
 
 /* ───────────── jellyfish ───────────── */
 class Jelly {
-  constructor(g, x, y, rng){
-    this.g = g; this.rng = rng; this.id = uid++; this.x = x; this.y = y; this.head = -Math.PI / 2 + rr(rng, -.3, .3); this.ph = rng() * TAU; this.phase = rng(); this.vel = 0; this.c = 0; this.cRim = 0;
+  constructor(g, x, y, rng, head){
+    this.g = g; this.rng = rng; this.id = uid++; this.x = x; this.y = y; this.head = head == null ? -Math.PI / 2 + rr(rng, -.3, .3) : head; this.ph = rng() * TAU; this.phase = rng(); this.vel = 0; this.c = 0; this.cRim = 0;
     this.k = hk(g.hue); this.k2 = hk(g.hue2); this.k3 = hk(g.hue3); this.flash = 0; this.flashT = rr(rng, 3, 9); this.near = 0; this.a = g.a * U; this.b = g.b * U;
     this.tent = []; for (let i = 0; i < g.tn; i++) this.tent.push({ f:(g.tn > 1 ? i / (g.tn - 1) * 2 - 1 : 0) * .86, s:new Strand(g.tl, g.ts * U, rr(rng, -.9, .9)) });
     this.arms = []; for (let i = 0; i < g.an; i++) this.arms.push({ f:(g.an > 1 ? i / (g.an - 1) * 2 - 1 : 0) * .3, s:new Strand(g.al, g.as * U, rr(rng, -.6, .6)) });
-    this.st = { k:this.k, k2:this.k2, k3:this.k3, skin:SK.jelly, out:OUTS.soft, fillV:.62, edgeV:1, rim:codes('wv') };
+    this.st = { k:this.k, k2:this.k2, k3:this.k3, skin:g.bell ? { t:JELLY, c:g.bell } : SK.jelly, out:OUTS.soft, fillV:.62, edgeV:1, rim:codes('wv') };
     this.tw = codes(g.tw);
   }
   relax(){ for (const t of this.tent) t.s.live = false; for (const a of this.arms) a.s.live = false; }
   update(dt){
     const g = this.g, up = -Math.PI / 2;
-    let want = up + (Math.sin(T * .23 + this.ph) * .3 + Math.sin(T * .51 + this.ph * 1.9) * .18);
-    const m = 90 * U; if (this.x < m) want += .45; else if (this.x > GW - m) want -= .45;
-    const reach = g.tl * g.ts * U + this.b;
-    if (this.y < -reach){ this.y = GH + this.b + 4; this.x = GW * (.12 + .76 * this.rng()); this.relax(); }       // off the top: re-enter from below
-    this.head += angDiff(want, this.head) * 1.4 * dt;
+    if (WALLS){                                                  // walled in: roam like the rest, leaning upward, and never leave
+      const turn = steer(this, this.x, this.y, this.head, .3) + angDiff(up, this.head) * .1; this.head += clamp(turn, -1.1, 1.1) * dt;
+      hold(this, this.x, this.y, Math.max(this.a, this.b) + ch * 1.5); this.x = HX; this.y = HY;
+    } else {
+      let want = up + (Math.sin(T * .23 + this.ph) * .3 + Math.sin(T * .51 + this.ph * 1.9) * .18);
+      const m = 90 * U; if (this.x < m) want += .45; else if (this.x > GW - m) want -= .45;
+      const reach = g.tl * g.ts * U + this.b;
+      if (this.y < -reach){ this.y = GH + this.b + 4; this.x = GW * (.12 + .76 * this.rng()); this.relax(); }     // off the top: re-enter from below
+      this.head += angDiff(want, this.head) * 1.4 * dt;
+    }
     const before = this.phase % 1; this.phase += dt * g.freq; const p = this.phase % 1, pr = (p + .92) % 1;
     const pulse = q => q < .28 ? smooth(q / .28) : 1 - smooth((q - .28) / .72);
     this.c = pulse(p); this.cRim = pulse(pr);                    // the squeeze starts at the crown; the rim follows a beat later
@@ -511,8 +529,8 @@ class Jelly {
 
 /* ───────────── winged things, seen from above: butterfly (flutter, glide, perch) and dragonfly (hover, dart) ───────────── */
 class Flyer {
-  constructor(g, x, y, rng){
-    this.g = g; this.rng = rng; this.id = uid++; this.x = x; this.y = y; this.head = rng() * TAU; this.ph = rng() * TAU; const n = g.n;
+  constructor(g, x, y, rng, head){
+    this.g = g; this.rng = rng; this.id = uid++; this.x = x; this.y = y; this.head = head == null ? rng() * TAU : head; this.ph = rng() * TAU; const n = g.n;
     this.bx = new Float32Array(n); this.by = new Float32Array(n);
     const c = Math.cos(this.head), s = Math.sin(this.head); for (let i = 0; i < n; i++){ this.bx[i] = x - c * g.seg * U * i; this.by[i] = y - s * g.seg * U * i; }
     this.k = hk(g.hue); this.k2 = hk(g.hue2); this.k3 = hk(g.hue3); this.flash = 0; this.flashT = rr(rng, 3, 9); this.near = 0;
@@ -561,7 +579,9 @@ class Flyer {
     turn += this.kick * 7; this.kick *= Math.exp(-dt * 7); this.head += clamp(turn, -5, 5) * dt;
     const lat = g.flight !== 'flutter' || this.perch || this.glide ? 0 : Math.sin(Math.PI * this.flap) * g.shimmy * U;   // slips sideways, alternating each beat
     const c = Math.cos(this.head), s = Math.sin(this.head), bx = this.bx, by = this.by, n = g.n, seg = g.seg * U;
-    this.x += (c * this.v - s * lat) * dt; this.y += (s * this.v + c * lat) * dt; bx[0] = this.x; by[0] = this.y;
+    this.x += (c * this.v - s * lat) * dt; this.y += (s * this.v + c * lat) * dt;
+    if (WALLS){ hold(this, this.x, this.y, g.fw.len * U * .75 + ch); this.x = HX; this.y = HY; }
+    bx[0] = this.x; by[0] = this.y;
     let pa = this.head;
     for (let i = 1; i < n; i++){
       let a = Math.atan2(by[i-1] - by[i], bx[i-1] - bx[i]); const d = angDiff(a, pa);
@@ -600,9 +620,55 @@ class Flyer {
 }
 
 /* ───────────── tank ───────────── */
-function make(kind, hue, x, y, seed){
-  const rng = mulberry32(seed | 0), g = SPECIES[kind](rng, hue);
-  return new (kind === 'jelly' ? Jelly : g.flight ? Flyer : Spined)(g, x, y, rng);
+function build(g, x, y, rng, head){ return new (g.kind === 'jelly' ? Jelly : g.flight ? Flyer : Spined)(g, x, y, rng, head); }
+function make(kind, hue, x, y, seed){ const rng = mulberry32(seed | 0); return build(SPECIES[kind](rng, hue), x, y, rng); }
+
+/* text → creature. The text is the seed, its characters become the glyphs the creature is drawn in,
+   and a colour word or a species word in it is taken literally. */
+const HUEWORDS = { red:0, scarlet:6, crimson:350, orange:28, amber:38, gold:48, yellow:58, lime:88, green:125, emerald:140, mint:152, teal:172, aqua:182, cyan:186, sky:200, blue:218, navy:232, indigo:248, violet:268, purple:282, magenta:305, pink:328, rose:342 };
+const KINDWORDS = { serpent:'serpent', snake:'serpent', eel:'serpent', worm:'serpent', dragon:'serpent', fish:'fish', koi:'fish', carp:'fish', minnow:'fish',
+  jelly:'jelly', jellyfish:'jelly', medusa:'jelly', lizard:'lizard', gecko:'lizard', newt:'lizard', salamander:'lizard', crawler:'crawler', centipede:'crawler', millipede:'crawler', bug:'crawler',
+  butterfly:'butterfly', moth:'butterfly', dragonfly:'dragonfly', damselfly:'dragonfly', wisp:'wisp', firefly:'wisp', spark:'wisp' };
+function readText(text){
+  let h = 2166136261; for (let i = 0; i < text.length; i++){ h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+  let kind = null, hue = null;
+  for (const w of text.toLowerCase().split(/[^a-z]+/)){ if (KINDWORDS[w]) kind = KINDWORDS[w]; if (w in HUEWORDS) hue = HUEWORDS[w]; }
+  const seen = new Set(), chars = [];
+  for (let i = 0; i < text.length; i++){ const c = text.charCodeAt(i); if (((c > 32 && c < 127) || (c > 160 && c < 256)) && !seen.has(c)){ seen.add(c); chars.push(c); } }
+  return { seed: h | 0, kind, hue, chars: chars.slice(0, 10) };
+}
+function wear(g, chars, rng){
+  if (!chars.length) return;
+  const cyc = n => Array.from({ length:n }, (_, i) => chars[i % chars.length]);
+  g.tw = String.fromCharCode(...chars);
+  if (g.kind === 'jelly'){ g.bell = cyc(2); g.armGlyphs = cyc(Math.min(3, Math.max(2, chars.length))); }
+  else if (g.thin) g.thin = cyc(5).concat([58, 46]);
+  else if (g.wing) g.wing = Object.assign({}, g.wing, { c: cyc(Math.min(3, chars.length)), m: cyc(Math.min(4, chars.length)).reverse() });
+  else { const t = pick(rng, [RAMP, BANDS, BANDS, SPOTS, STRIPE]); g.skin = { t, c: cyc(t === SPOTS || t === STRIPE ? 3 : Math.max(2, Math.min(6, chars.length))), f: rr(rng, .6, 1.2) }; }
+}
+function reshape(c, text){
+  const i = creatures.indexOf(c); if (i < 0) return null;
+  const R = readText(text), rng = mulberry32(R.seed), kind = R.kind || c.g.kind, g = SPECIES[kind](rng, R.hue != null ? R.hue + rr(rng, -8, 8) : rng() * 360);
+  wear(g, R.chars, rng);
+  const d = build(g, c.x, c.y, rng, c.head); d.id = c.id; d.text = text; d.flash = 1.2; creatures[i] = d; return d;
+}
+function clone(c, n){
+  const rng = mulberry32((c.id * 7919 + creatures.length * 31 + 5) | 0), out = [];
+  for (let i = 0; i < n; i++){
+    const a = rng() * TAU, d = rr(rng, 50, 170) * U, k = build(c.g, clamp(c.x + Math.cos(a) * d, ch * 3, GW - ch * 3), clamp(c.y + Math.sin(a) * d, ch * 3, GH - ch * 3), mulberry32((rng() * 1e9) | 0));
+    k.text = c.text; k.flash = 1; creatures.push(k); out.push(k);
+  }
+  return out;
+}
+function remove(c){ const i = creatures.indexOf(c); if (i >= 0) creatures.splice(i, 1); if (c && c.id === SEL) SEL = 0; return i >= 0; }
+function pickAt(x, y, rad){                                      // nearest creature-owned cell to a point, within rad cells
+  const cx = Math.floor(x / cw), cy = Math.floor(y / ch); let best = 0, bd = 1e9; rad = rad == null ? 2 : rad;
+  for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++){
+    const X = cx + dx, Y = cy + dy; if (X < 0 || Y < 0 || X >= cols || Y >= rows) continue;
+    const o = fo[Y * cols + X]; if (!o || o === WALL) continue;
+    const d = dx * dx * cw * cw + dy * dy * ch * ch; if (d < bd){ bd = d; best = o; }
+  }
+  return best ? creatures.find(c => c.id === best) || null : null;
 }
 const CAST = [['serpent', 168], ['jelly', 272], ['butterfly', 312], ['fish', 24], ['crawler', 104], ['lizard', 48], ['wisp', 56], ['dragonfly', 188], ['jelly', 196], ['fish', 322], ['butterfly', 36], ['wisp', 60], ['serpent', 352], ['fish', 212], ['lizard', 150], ['wisp', 64]];
 const KINDS = ['serpent', 'serpent', 'fish', 'fish', 'jelly', 'jelly', 'crawler', 'lizard', 'butterfly', 'butterfly', 'dragonfly', 'wisp'];
@@ -632,8 +698,9 @@ function add(kind, hue, x, y, seed){
   if (x == null){ const p = freeSpot(rng); x = p[0]; y = p[1]; }
   const c = make(kind, hue, x, y, (rng() * 1e9) | 0); c.flash = 1; creatures.push(c); return c;
 }
-function rescale(f){                                            // cell size changed: rebuild every creature at its scaled spot
-  creatures = creatures.map(c => new c.constructor(c.g, c.x * f, c.y * f, mulberry32(c.id * 9973 + 7)));
+function rescale(fx, fy){                                       // board changed shape: rebuild every creature at its scaled spot
+  if (fy == null) fy = fx;
+  creatures = creatures.map(c => { const d = build(c.g, c.x * fx, c.y * fy, mulberry32(c.id * 9973 + 7), c.head); d.id = c.id; d.text = c.text; return d; });
   parts = []; buildMotes(mulberry32(4242));
 }
 function step(dt){
@@ -651,19 +718,33 @@ function step(dt){
 }
 function rasterize(){
   fv.fill(0); TWD = 0;
+  fo.fill(0); OWN = 0;
   for (const m of motes){ const s = Math.max(0, Math.sin(T * m.w + m.ph)), v = .13 + .95 * Math.pow(s, 12); dot(m.x, m.y, v > .5 ? 42 : m.c, v, m.k, true); }
   for (const p of parts){ const a = 1 - p.life / p.max; dot(p.x, p.y, p.set[Math.min(p.set.length - 1, (a * p.set.length) | 0)], p.v * (1 - a * a), p.k, true); }
-  for (const c of creatures) c.draw();
-  TWD = 0;
+  if (SEL){ bx0 = cols; bx1 = -1; by0 = rows; by1 = -1; }
+  for (const c of creatures){ OWN = c.id; c.draw(); }
+  OWN = 0; TWD = 0;
+  if (WALLS){                                                    // the frame: dim on its own, lit by the renderer where light reaches it
+    const set = (i, code) => { fv[i] = .16; fc[i] = code; fk[i] = WHITE; fo[i] = WALL; };
+    for (let x = 0; x < cols; x++){ const c = x === 0 || x === cols - 1 ? 43 : 61; set(x, c); set((rows - 1) * cols + x, c); }
+    for (let y = 1; y < rows - 1; y++){ set(y * cols, 124); set(y * cols + cols - 1, 124); }
+  }
+  if (SEL && bx1 >= bx0){                                        // crop marks around whatever is selected
+    const x0 = Math.max(0, bx0 - 2), x1 = Math.min(cols - 1, bx1 + 2), y0 = Math.max(0, by0 - 1), y1 = Math.min(rows - 1, by1 + 1), v = 1.05 + .3 * Math.sin(T * 6);
+    const mark = (x, y, code) => { if (x < 0 || y < 0 || x >= cols || y >= rows) return; const i = y * cols + x; fv[i] = v; fc[i] = code; fk[i] = WHITE; fo[i] = 0; };
+    for (const [x, sx] of [[x0, 1], [x1, -1]]) for (const [y, sy] of [[y0, 1], [y1, -1]]){ mark(x, y, 43); mark(x + sx, y, 45); mark(x + 2 * sx, y, 45); mark(x, y + sy, 124); }
+  }
 }
 
 return {
-  configure, buildScene, add, rescale, step, rasterize, make, SPECIES, KINDS, CAST, OUTS, SK, HUES, WHITE, hk, mulberry32,
+  configure, buildScene, add, rescale, step, rasterize, make, reshape, clone, remove, pickAt, readText, SPECIES, KINDS, CAST, OUTS, SK, HUES, WHITE, WALL, hk, mulberry32,
   Spined, Jelly, Flyer,
-  clear(){ creatures = []; parts = []; },
-  reset(){ creatures = []; parts = []; motes = []; uid = 1; T = 0; mx = my = -1e6; },
+  clear(){ creatures = []; parts = []; SEL = 0; },
+  reset(){ creatures = []; parts = []; motes = []; uid = 1; T = 0; mx = my = -1e6; SEL = 0; WALLS = false; },
+  select(c){ SEL = c ? c.id : 0; }, get selected(){ return SEL ? creatures.find(c => c.id === SEL) || null : null; },
+  set walls(b){ WALLS = !!b; }, get walls(){ return WALLS; },
   pointer(x, y){ mx = x; my = y; },
-  field(){ return { fv, fc, fk, cols, rows, cw, ch }; },
+  field(){ return { fv, fc, fk, fo, cols, rows, cw, ch }; },
   get creatures(){ return creatures; }, get parts(){ return parts; }, get time(){ return T; }, get U(){ return U; }, get GW(){ return GW; }, get GH(){ return GH; },
 };
 });

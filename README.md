@@ -7,15 +7,24 @@ block of genome data, simulated in pixel space and then written into a grid of c
 
 ![Reef board](docs/reef.png)
 
-This is the look demo. The tank features (copy one to a hundred, save environments, build your own creature)
-are not built yet.
+Works on a desk and on a phone, installs as an app, and runs offline once loaded.
 
 ## Run it
 
-Open `index.html` in a browser. No build step, no dependencies.
+Open `index.html` in a browser, or `node tests/serve.js` and visit the address it prints (installing and offline
+use need http). No build step, no dependencies.
 
-URL options: `?seed=4f2a` (hex), `&theme=reef|phosphor|amber|vfd`, `&cell=s|m|l`, `&solo=butterfly` (one creature, centred).
-Keys: space pauses, `r` reseeds, `t` cycles the board theme. Click the board to release a creature there.
+- **Click or tap open water** to release a creature there.
+- **Click or tap a creature** to open its card:
+  - *Type anything.* The text is the creature's seed, so the same words always make the same creature, and the
+    characters you typed become the glyphs it is drawn in. A colour word or a species word is taken literally: `red koi`,
+    `blue snake`, `pink moth`.
+  - *Shuffle* writes a random word into the box. *Copy* and *Copy ×10* duplicate it. *Delete* removes it.
+- **Walls** keeps every creature inside a lit frame. On by default on phones.
+- **Full screen** makes the board the whole window. On a phone it always is; controls sit behind the ≡ button.
+
+URL options: `?seed=4f2a` (hex), `&theme=reef|phosphor|amber|vfd`, `&cell=s|m|l`, `&walls=1|0`, `&solo=butterfly`.
+Keys: space pauses, `r` reseeds, `t` cycles the board, `w` walls, `f` full screen, Esc closes, Delete removes the selection.
 
 ## Creatures
 
@@ -36,15 +45,22 @@ Keys: space pauses, `r` reseeds, `t` cycles the board theme. Click the board to 
   is chosen by which way the edge runs and, for near-level edges, by where it crosses the cell (`_ . - ' "`).
 - **Skins** fill the inside: depth ramps, bands, spots, and glyphs that point the way the animal is heading.
 - **Twinkle**: a small share of a creature's cells briefly become some other bright symbol.
-- **Glow** is a one-pixel-per-cell colour canvas, blurred under the glyph canvas. Unlit cells keep a fading ghost.
+- **Light** is faked from the board itself. The lamps sit on a grid, so the light falling anywhere is a blurred copy of
+  what the board is emitting. That blur is done in script on a cols×rows field at three ranges: a tight glow around
+  the glyphs, the light reaching the unlit lamps nearby (each lamp shows the colour that reaches it), and a wide wash
+  that carries past the bezel. The wall frame is lit the same way. No CSS blur, mask or blend layers are used, so the
+  cost is the same on a phone as on a desktop.
 
 ## Layout
 
-- `js/sim.js`: simulation and rasteriser. No DOM, so it also runs in Node.
-- `js/app.js`: canvases, themes, controls.
-- `tests/motion.test.js`: 145 checks against the simulation itself: feet that must not slide, waves that must run
-  the right way, wings that must stay in step, glyph vocabulary.
-- `tests/browser.test.js`: 33 checks in a real browser (Playwright + Chromium). Set `ASCII_LIFE_URL` to test a deployed copy.
+- `js/sim.js`: simulation, rasteriser, hit-testing, text → creature. No DOM, so it also runs in Node.
+- `js/app.js`: canvases, light, themes, the creature card, controls.
+- `manifest.webmanifest`, `sw.js`, `icons/`: install and offline. The worker is network-first, so a deploy shows up
+  as soon as you are online. `tools/make-icons.js` regenerates the icons from `tools/icon.html`.
+- `tests/motion.test.js`: 182 checks against the simulation itself: feet that must not slide, waves that must run the
+  right way, wings in step, walls that must hold, reshaping that must be repeatable.
+- `tests/browser.test.js`: 64 checks in a real browser (Playwright + Chromium) on desktop and an emulated phone,
+  including install metadata and starting with the network off. Set `ASCII_LIFE_URL` to test a deployed copy.
 - `tests/frames.js`: prints a creature as text, moment by moment: `node tests/frames.js butterfly 6 0.05`.
 
 ```

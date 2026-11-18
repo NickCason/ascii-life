@@ -251,6 +251,67 @@ for (const kind of ALL){
   check('tank', 'a creature under the pointer lights up', c.near > .8, `glow ${f2(c.near)}`);
 }
 
+/* ── 9. walls: nothing gets its head past the frame, and the frame is drawn ── */
+for (const kind of ALL){
+  let headOut = 0, nodeOut = 0, nodes = 0, okFinite = true, maxTurn = 0, maxStep = 0;
+  for (const seed of [1, 2, 3, 4]){
+    const c = solo(kind, seed, 120, 60); S.walls = true; let lh = c.head, [lx, ly] = headOf(c);
+    run(45, () => {
+      if (!finite(c)) okFinite = false;
+      const [x, y] = headOf(c); if (x < 0 || x > S.GW || y < 0 || y > S.GH) headOut++;
+      maxStep = Math.max(maxStep, Math.hypot(x - lx, y - ly) / DT); lx = x; ly = y;
+      maxTurn = Math.max(maxTurn, Math.abs(angDiff(c.head, lh)) / DT); lh = c.head;
+      const xs = c.px || c.bx, ys = c.py || c.by; if (xs) for (let i = 0; i < xs.length; i++){ nodes++; if (xs[i] < 0 || xs[i] > S.GW || ys[i] < 0 || ys[i] > S.GH) nodeOut++; }
+    });
+  }
+  check('walls', `${kind}: head never leaves the board`, okFinite && headOut === 0, `${headOut} frames outside`);
+  if (kind !== 'jelly') check('walls', `${kind}: body stays inside too`, nodeOut / nodes < .01, `${f2(100 * nodeOut / nodes)}% of joint samples outside`);
+  else check('walls', 'jelly: turns back instead of leaving by the top', maxStep < 200, `largest single-frame move ${f2(maxStep)} px/s`);
+  check('walls', `${kind}: turns away without snapping`, maxTurn < 9, `peak turn rate ${f2(maxTurn)} rad/s`);
+}
+{
+  S.configure(120, 50, CW, CH); S.reset(); S.buildScene(3, 1); S.walls = true; S.rasterize(); let f = S.field(), ring = 0, bad = 0;
+  for (let y = 0; y < f.rows; y++) for (let x = 0; x < f.cols; x++){ const edge = x === 0 || y === 0 || x === f.cols - 1 || y === f.rows - 1, w = f.fo[y * f.cols + x] === S.WALL; if (w) ring++; if (w !== edge) bad++; }
+  check('walls', 'frame is drawn on the outer ring of cells and nowhere else', bad === 0 && ring === 2 * (f.cols + f.rows) - 4, `${ring} frame cells`);
+  S.walls = false; S.rasterize(); f = S.field(); let left = 0; for (let i = 0; i < f.fo.length; i++) if (f.fo[i] === S.WALL) left++;
+  check('walls', 'frame disappears when walls are off', left === 0);
+}
+
+/* ── 10. tools: pick a creature, reshape it from text, copy it, delete it ── */
+{
+  let hit = 0, tried = 0, miss = 0;
+  for (const kind of ALL){
+    const c = solo(kind, 5, 160, 60); run(3); S.rasterize(); const f = S.field(); let own = -1;
+    for (let i = 0; i < f.fo.length; i++) if (f.fo[i] === c.id){ own = i; break; }
+    tried++; if (own >= 0 && S.pickAt((own % f.cols + .5) * CW, ((own / f.cols | 0) + .5) * CH, 0) === c) hit++;
+    if (S.pickAt(c.x > S.GW / 2 ? 30 : S.GW - 30, c.y > S.GH / 2 ? 30 : S.GH - 30, 2) !== null) miss++;
+  }
+  check('tools', 'a click on a creature finds that creature', hit === tried, `${hit}/${tried} species`);
+  check('tools', 'a click on open water finds nothing', miss === 0, `${miss} false hits`);
+
+  S.configure(160, 60, CW, CH); S.reset(); const a = S.add('fish', 200, 300, 300, 1), b = S.add('fish', 20, 700, 500, 2), idA = a.id, [ax, ay] = headOf(a);
+  const a1 = S.reshape(a, 'nick'), b1 = S.reshape(b, 'nick'), a2 = S.reshape(a1, 'nick!');
+  check('tools', 'same words → same creature, whoever they are typed on', JSON.stringify(a1.g) === JSON.stringify(b1.g));
+  check('tools', 'one more character → a different creature', JSON.stringify(a2.g) !== JSON.stringify(a1.g));
+  check('tools', 'reshaping keeps identity and place', a2.id === idA && Math.hypot(a2.x - ax, a2.y - ay) < 1 && S.creatures.length === 2 && S.creatures.includes(a2), `id ${a2.id}, moved ${f2(Math.hypot(a2.x - ax, a2.y - ay))} px`);
+  const words = { 'red koi':['fish', 0], 'blue snake':['serpent', 218], 'pink moth':['butterfly', 328], 'green gecko':['lizard', 125], 'gold medusa':['jelly', 48] }; let okW = 0;
+  let cur = a2; for (const [t, [k, h]] of Object.entries(words)){ cur = S.reshape(cur, t); if (cur.g.kind === k && Math.abs(angDiff(cur.g.hue * TAU / 360, h * TAU / 360)) < .16) okW++; }
+  check('tools', 'colour words and species words are taken literally', okW === 5, `${okW}/5 phrases`);
+  let wore = 0; const samples = { serpent:'XYZ', fish:'QWK', lizard:'HJK', crawler:'ZXQ', jelly:'QZ', butterfly:'QXZ', wisp:'QXZ' };
+  for (const [kind, t] of Object.entries(samples)){
+    const c0 = solo(kind, 3, 160, 60), c = S.reshape(c0, t); c.flash = 0; const seen = new Set(); run(4, i => { if (i % 10) return; S.rasterize(); const f = S.field(); for (let q = 0; q < f.fv.length; q++) if (f.fv[q] > 0 && f.fo[q] === c.id) seen.add(String.fromCharCode(f.fc[q])); });
+    if ([...t].filter(ch => seen.has(ch)).length >= 2) wore++;
+  }
+  check('tools', 'the typed characters show up in the creature', wore === Object.keys(samples).length, `${wore}/${Object.keys(samples).length} species drawn in their letters`);
+  S.configure(160, 60, CW, CH); S.reset(); const c = S.add('lizard', 90, 600, 400, 4); const kids = S.clone(c, 10);
+  check('tools', 'copy ×10 makes ten more of the same', S.creatures.length === 11 && kids.every(k => k.g === c.g && k.x > 0 && k.x < S.GW && k.y > 0 && k.y < S.GH && k.id !== c.id));
+  S.select(c); S.rasterize(); let f = S.field(), marks = 0; for (let i = 0; i < f.fv.length; i++) if (f.fv[i] > 0 && f.fc[i] === 43 && f.fo[i] === 0 && f.fk[i] === S.WHITE) marks++;
+  check('tools', 'the selected creature gets crop marks', marks === 4 && S.selected === c, `${marks} corner marks`);
+  const gone = S.remove(c); S.rasterize(); f = S.field(); let owned = 0; for (let i = 0; i < f.fo.length; i++) if (f.fo[i] === c.id) owned++;
+  check('tools', 'delete removes it and clears the selection', gone && S.creatures.length === 10 && S.selected === null && owned === 0);
+  run(5); check('tools', 'the tank keeps running after edits', S.creatures.every(finite));
+}
+
 const w = Math.max(...out.map(r => r[2].length));
 let g = '';
 for (const [st, grp, name, detail] of out){ if (grp !== g){ g = grp; console.log(`\n${grp.toUpperCase()}`); } console.log(`  ${st === 'PASS' ? '✓' : '✗ FAIL'} ${name.padEnd(w)}  ${detail}`); }
