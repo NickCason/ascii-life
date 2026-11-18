@@ -1,0 +1,14 @@
+{
+  "name": "ascii-life",
+  "private": true,
+  "description": "A lit character board of procedurally animated ASCII creatures.",
+  "scripts": {
+    "test": "node tests/motion.test.js && node tests/browser.test.js",
+    "test:motion": "node tests/motion.test.js",
+    "test:browser": "node tests/browser.test.js",
+    "frames": "node tests/frames.js"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

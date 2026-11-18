@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ASCII Life</title>
+<meta name="description" content="A lit character board of procedurally animated ASCII creatures.">
+<style>
+/* Layout: one lit character board fills the room; a thin nameplate above, a control rail below. */
+:root{
+  color-scheme: dark;
+  --room:#030407; --bg:#04060b; --bezel:#0a0d13; --line:#1a212d;
+  --ink:#a9b6c9; --ink-dim:#5a667a; --accent:#6ff2d2; --glow:rgba(111,242,210,.22);
+  --halo:.85;
+  --mono: ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--room);color:var(--ink);font:12px/1.4 var(--mono);overflow:hidden;
+  -webkit-font-smoothing:antialiased}
+.app{height:100%;display:flex;flex-direction:column;gap:10px;padding-block:12px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+.plate{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+  font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-dim)}
+.plate b{color:var(--ink);font-weight:600}
+.plate .pip{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:9px;
+  background:var(--accent);box-shadow:0 0 10px var(--accent)}
+.stat{font-variant-numeric:tabular-nums;min-width:0}
+@media (max-width:720px){.plate{letter-spacing:.08em}}
+
+.board{position:relative;flex:1;min-height:0;border-radius:5px;background:var(--bg);overflow:hidden;cursor:crosshair;
+  box-shadow:0 0 0 1px var(--line),0 0 0 6px var(--bezel),0 0 0 7px var(--line),0 24px 90px -30px var(--glow)}
+.board canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#halo{filter:blur(15px) saturate(1.35);opacity:var(--halo)}
+#bloom{filter:blur(2.5px);mix-blend-mode:screen;opacity:.85}
+.glass{position:absolute;inset:0;pointer-events:none;
+  background:
+    repeating-linear-gradient(0deg,rgba(0,0,0,.14) 0 1px,transparent 1px 3px),
+    radial-gradient(120% 95% at 50% 45%,transparent 58%,rgba(0,0,0,.5) 100%)}
+
+.rail{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:0 2px}
+.group{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.lbl{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-dim);margin-right:4px}
+button{font:inherit;font-size:11px;letter-spacing:.06em;color:var(--ink);background:transparent;cursor:pointer;
+  border:1px solid var(--line);border-radius:3px;padding:5px 9px;min-height:28px;transition:border-color .15s,color .15s,background .15s}
+button:hover{border-color:var(--ink-dim)}
+button:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+button[aria-pressed="true"]{color:var(--accent);border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,transparent)}
+button .sw{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:1px}
+.hint{margin-left:auto;color:var(--ink-dim);font-size:11px}
+@media (max-width:720px){.hint{margin-left:0;width:100%}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="plate">
+    <div><span class="pip"></span><b>ASCII Life</b> &nbsp;/&nbsp; look demo</div>
+    <div class="stat" id="stat">&nbsp;</div>
+  </header>
+
+  <main class="board" id="board" aria-label="Animated character display">
+    <canvas id="halo"></canvas>
+    <canvas id="dots"></canvas>
+    <canvas id="bloom"></canvas>
+    <canvas id="glyphs"></canvas>
+    <div class="glass"></div>
+  </main>
+
+  <footer class="rail">
+    <div class="group" role="group" aria-label="Board">
+      <span class="lbl">Board</span>
+      <button id="th-reef" data-theme="reef"><span class="sw" style="background:#6ff2d2"></span>Reef</button>
+      <button id="th-phosphor" data-theme="phosphor"><span class="sw" style="background:#5dff8f"></span>Phosphor</button>
+      <button id="th-amber" data-theme="amber"><span class="sw" style="background:#ffb347"></span>Amber</button>
+      <button id="th-vfd" data-theme="vfd"><span class="sw" style="background:#59f0e6"></span>VFD</button>
+    </div>
+    <div class="group" role="group" aria-label="Cell size">
+      <span class="lbl">Cell</span>
+      <button id="cell-s" data-cell="s">S</button>
+      <button id="cell-m" data-cell="m">M</button>
+      <button id="cell-l" data-cell="l">L</button>
+    </div>
+    <div class="group" role="group" aria-label="Creatures">
+      <span class="lbl">Tank</span>
+      <button id="add">+1</button>
+      <button id="add10">+10</button>
+      <button id="clear">Clear</button>
+      <button id="reseed">Reseed</button>
+      <button id="pause" aria-pressed="false">Pause</button>
+    </div>
+    <div class="hint">Click the board to release a creature there.</div>
+  </footer>
+</div>
+
+<script src="js/sim.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
